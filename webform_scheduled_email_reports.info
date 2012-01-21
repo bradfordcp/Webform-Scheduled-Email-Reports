@@ -1,0 +1,6 @@
+name = Webform Scheduled Email Reports
+description = "Mails webform results at a specified schedule in an attached CSV"
+package = Webform
+core = 7.x
+dependencies[] = webform
+files[] = webform_scheduled_email_reports.module

@@ -1,0 +1,425 @@
+<?php
+
+/**
+ * @file
+ * Emails webform submissions in an attached CSV on a specified report_interval
+ */
+
+function webform_scheduled_email_reports_report_intervals() {
+  return array(t('Daily'));
+}
+
+/**
+ * Implements hook_menu().
+ */
+function webform_scheduled_email_reports_menu() {
+  $items['node/%webform_menu/webform-results/schedule'] = array(
+    'title' => 'Schedule Email Report',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('webform_scheduled_email_reports_schedule_form', 1),
+    'access callback' => 'webform_results_access',
+    'access arguments' => array(1),
+    'weight' => 8,
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  return $items;
+}
+
+/**
+ * Form for managing whether the web node emails a report
+ */
+function webform_scheduled_email_reports_schedule_form($form, &$form_state, $node) {
+  $form = array();
+
+  $form['nid'] = array(
+    '#type' => 'value',
+    '#value' => $node->nid,
+  );
+
+  $form['enabled'] = array(
+    '#type' => 'radios',
+    '#title' => t('Report Enabled'),
+    '#description' => t('Disabling scheduled reporting will stop the generated emails from being sent. The point at which the reports were stopped will be recorded to pick-up where the reports stopped.'),
+    '#options' => array(
+      t('Disabled'),
+      t('Enabled'),
+    ),
+    // Default to disabled
+    '#default_value' => isset($form_state['values']['enabled']) ? $form_state['values']['enabled'] : $node->webform['scheduled_email_report']['enabled'],
+  );
+  
+  $form['recipient'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Daily Report Recipient'),
+    '#description' => t('Email address the daily CSV should be sent to.'),
+    '#default_value' => isset($form_state['values']['recipient']) ? $form_state['values']['recipient'] : $node->webform['scheduled_email_report']['recipient'],
+  );
+  
+  $form['report_interval'] = array(
+    '#type' => 'radios',
+    '#title' => t('Report report_interval'),
+    '#description' => t('How often the report email is sent.'),
+    '#default_value' => isset($form_state['values']['report_interval']) ? $form_state['values']['report_interval'] : $node->webform['scheduled_email_report']['report_interval'],
+    '#options' => webform_scheduled_email_reports_report_intervals(),
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Schedule'),
+  );
+
+  return $form;
+}
+
+function webform_scheduled_email_reports_schedule_form_submit($form, &$form_state) {
+  $node = node_load($form_state['values']['nid']);
+  
+  $node->webform['scheduled_email_report']['enabled'] = $form_state['values']['enabled'];
+  $node->webform['scheduled_email_report']['recipient'] = $form_state['values']['recipient'];
+  $node->webform['scheduled_email_report']['report_interval'] = $form_state['values']['report_interval'];
+
+  node_save($node);
+}
+
+/**
+ * Implements hook_node_load().
+ */
+function webform_scheduled_email_reports_node_load($nodes, $types) {
+  // Select all webforms that match these node IDs.
+  $result = db_select('webform_scheduled_email_reports')
+    ->fields('webform_scheduled_email_reports')
+    ->condition('nid', array_keys($nodes), 'IN')
+    ->execute()
+    ->fetchAllAssoc('nid', PDO::FETCH_ASSOC);
+  
+  // Set the scheduled_email_report key 
+  foreach ($result as $nid => $webform_schedules) {
+    // Load the scheduled_email_report for each matched node
+    $nodes[$nid]->webform['scheduled_email_report'] = $webform_schedules;
+    $nodes[$nid]->webform['scheduled_email_report']['record_exists'] = TRUE;
+  }
+  
+  // Set defaults for nodes that are webforms and have not been saved yet
+  foreach ($nodes as $nid => $node) {
+    if (property_exists($node, 'webform') && !array_key_exists('scheduled_email_report', $node->webform)) {
+      $node->webform['scheduled_email_report'] = webform_scheduled_email_reports_defaults();
+    }
+  }
+}
+
+/**
+ * Implements hook_node_insert().
+ */
+function webform_scheduled_email_reports_node_insert($node) {
+  if (property_exists($node, 'webform')) {
+    if (!array_key_exists('scheduled_email_report', $node->webform)) {
+      $node->webform['scheduled_email_report'] = webform_scheduled_email_reports_defaults();
+    }
+    
+    if ($node->webform['scheduled_email_report']['record_exists']) {
+      db_update('webform_scheduled_email_reports')
+        ->fields(array(
+          'sid' => $node->webform['scheduled_email_report']['sid'],
+          'enabled' => $node->webform['scheduled_email_report']['enabled'],
+          'report_interval' => $node->webform['scheduled_email_report']['report_interval'],
+          'recipient' => $node->webform['scheduled_email_report']['recipient'],
+          'last_report' => $node->webform['scheduled_email_report']['last_report'],
+        ))
+        ->condition('nid', $node->nid)
+        ->execute();
+    }
+    else {
+      db_insert('webform_scheduled_email_reports')
+        ->fields(array(
+          'nid' => $node->nid,
+          'sid' => $node->webform['scheduled_email_report']['sid'],
+          'enabled' => $node->webform['scheduled_email_report']['enabled'],
+          'report_interval' => $node->webform['scheduled_email_report']['report_interval'],
+          'recipient' => $node->webform['scheduled_email_report']['recipient'],
+          'last_report' => $node->webform['scheduled_email_report']['last_report'],
+        ))
+        ->execute();
+    }
+  }
+}
+
+/**
+ * Implements hook_node_update().
+ */
+function webform_scheduled_email_reports_node_update($node) {
+  if (property_exists($node, 'webform')) {
+    if (!array_key_exists('scheduled_email_report', $node->webform)) {
+      $node->webform['scheduled_email_report'] = webform_scheduled_email_reports_defaults();
+    }
+    
+    if ($node->webform['scheduled_email_report']['record_exists']) {
+      db_update('webform_scheduled_email_reports')
+        ->fields(array(
+          'sid' => $node->webform['scheduled_email_report']['sid'],
+          'enabled' => $node->webform['scheduled_email_report']['enabled'],
+          'report_interval' => $node->webform['scheduled_email_report']['report_interval'],
+          'recipient' => $node->webform['scheduled_email_report']['recipient'],
+          'last_report' => $node->webform['scheduled_email_report']['last_report'],
+        ))
+        ->condition('nid', $node->nid)
+        ->execute();
+    }
+    else {
+      db_insert('webform_scheduled_email_reports')
+        ->fields(array(
+          'nid' => $node->nid,
+          'sid' => $node->webform['scheduled_email_report']['sid'],
+          'enabled' => $node->webform['scheduled_email_report']['enabled'],
+          'report_interval' => $node->webform['scheduled_email_report']['report_interval'],
+          'recipient' => $node->webform['scheduled_email_report']['recipient'],
+          'last_report' => $node->webform['scheduled_email_report']['last_report'],
+        ))
+        ->execute();
+    }
+  }
+}
+
+/**
+ * Defaults for the addition to the webform
+ */
+function webform_scheduled_email_reports_defaults() {
+  return array(
+    'enabled' => 0,
+    'recipient' => variable_get('site_mail', ''),
+    'report_interval' => 0,
+    'sid' => 0,
+    'last_report' => 0,
+    'record_exists' => FALSE,
+  );
+}
+
+/**
+ * Implements hook_cron().
+ */
+function webform_scheduled_email_reports_cron() {
+  // Send reports for each webform (on the specified interval)
+  // $result = db_query('SELECT * FROM {aggregator_feed} WHERE checked + refresh < :time AND refresh != :never', array(
+  //   ':time' => REQUEST_TIME,
+  //   ':never' => AGGREGATOR_CLEAR_NEVER,
+  // ));
+  
+  $seconds_in_day = 60 * 60 * 24;
+  $now = time();
+  
+  // Select all nodes where the next report is due
+  $result = db_select('webform_scheduled_email_reports')
+    ->fields('webform_scheduled_email_reports', array('nid'))
+    ->where('last_report + :seconds_in_day < :now', array(':seconds_in_day' => $seconds_in_day, ':now' => $now))
+    ->condition('enabled', 1)
+    ->execute();
+  
+  $queue = DrupalQueue::get('webform_scheduled_email_reports');
+  foreach ($result as $record) {
+    $node = node_load($record->nid);
+    $queue->createItem($node);
+    
+    watchdog('webform_scheduled_email_reports', 'Scheduled report for !nid', array('!nid' => $node->nid));
+  }
+}
+
+/**
+ * Implements hook_cron_queue_info().
+ */
+function webform_scheduled_email_reports_cron_queue_info() {
+  $queues['webform_scheduled_email_reports'] = array(
+    'worker callback' => 'webform_scheduled_email_reports_send_report',
+    'time' => 60,
+  );
+  return $queues;
+}
+
+function webform_scheduled_email_reports_send_report($node) {
+  watchdog('webform_scheduled_email_reports', 'Generating report for !nid', array('!nid' => $node->nid));
+  
+  // Include appropriate methods
+  module_load_include('inc', 'webform', 'includes/webform.report');
+  module_load_include('inc', 'webform', 'includes/webform.export');
+  module_load_include('inc', 'webform', 'includes/webform.components');
+  module_load_include('inc', 'webform', 'includes/webform.submissions');
+  
+  // Generate the CSV (hijacked a lot of this from webform.report.inc with a bunch of logical defaults, see: webform_results_download)
+  $submission_information = array(
+    'serial' => t('Serial'),
+    'sid' => t('SID'),
+    'time' => t('Time'),
+    'draft' => t('Draft'),
+    'ip_address' => t('IP Address'),
+    'uid' => t('UID'),
+    'username' => t('Username'),
+  );
+  
+  // Build our default options
+  $options = array(
+    'delimiter' => ',',
+    'components' => array_merge(array_keys($submission_information), array_keys(webform_component_list($node, 'csv', TRUE))),
+    'select_keys' => 0,
+    'select_format' => 'separate',
+    'range_type' => 'range',
+    'sid' => webform_download_sids($node->nid, array('range_type' => 'range', 'start' => $node->webform['scheduled_email_report']['sid'], 'end' => '')),
+  );
+  
+  $format = 'delimited';
+  
+  // Open a new Webform exporter object.
+  $exporter = webform_export_create_handler($format, $options);
+
+  $file_name = drupal_tempnam('temporary://', 'webform_');
+  $handle = @fopen($file_name, 'w'); // The @ suppresses errors.
+  $exporter->bof($handle);
+  
+  // Fill in the header for the submission information (if any).
+  $header[2] = $header[1] = $header[0] = count($submission_information) ? array_fill(0, count($submission_information), '') : array();
+  if (count($submission_information)) {
+    $header[0][0] = $node->title;
+    $header[1][0] = t('Submission Details');
+    foreach (array_values($submission_information) as $column => $label) {
+      $header[2][$column] = $label;
+    }
+  }
+  
+  // Compile header information for components.
+  foreach ($options['components'] as $cid) {
+    if (isset($node->webform['components'][$cid])) {
+      $component = $node->webform['components'][$cid];
+  
+      // Let each component determine its headers.
+      if (webform_component_feature($component['type'], 'csv')) {
+        $component_header = (array) webform_component_invoke($component['type'], 'csv_headers', $component, $options);
+        $header[0] = array_merge($header[0], (array) $component_header[0]);
+        $header[1] = array_merge($header[1], (array) $component_header[1]);
+        $header[2] = array_merge($header[2], (array) $component_header[2]);
+      }
+    }
+  }
+  
+  // Add headers to the file.
+  foreach ($header as $row) {
+    $exporter->add_row($handle, $row);
+  }
+  
+  // Get all the required submissions for the download.
+  $filters['nid'] = $node->nid;
+  if (!empty($options['sids'])){
+    $filters['sid'] = $options['sids'];
+  }
+  $submissions = webform_get_submissions($filters);
+  
+  // Generate a row for each submission.
+  $row_count = 0;
+  foreach ($submissions as $sid => $submission) {
+    $row_count++;
+  
+    $row = array();
+    if (isset($submission_information['serial'])) {
+      $row[] = $row_count;
+    }
+    if (isset($submission_information['sid'])) {
+      $row[] = $sid;
+    }
+    if (isset($submission_information['time'])) {
+      $row[] = format_date($submission->submitted, 'small');
+    }
+    if (isset($submission_information['draft'])) {
+      $row[] = $submission->is_draft;
+    }
+    if (isset($submission_information['ip_address'])) {
+      $row[] =  $submission->remote_addr;
+    }
+    if (isset($submission_information['uid'])) {
+      $row[] = $submission->uid;
+    }
+    if (isset($submission_information['username'])) {
+      $row[] = $submission->name;
+    }
+  
+    foreach ($options['components'] as $cid) {
+      if (isset($node->webform['components'][$cid])) {
+        $component = $node->webform['components'][$cid];
+        // Let each component add its data.
+        $raw_data = isset($submission->data[$cid]['value']) ? $submission->data[$cid]['value'] : NULL;
+        if (webform_component_feature($component['type'], 'csv')) {
+          $data = webform_component_invoke($component['type'], 'csv_data', $component, $options, $raw_data);
+          if (is_array($data)) {
+            $row = array_merge($row, array_values($data));
+          }
+          else {
+            $row[] = isset($data) ? $data : '';
+          }
+        }
+      }
+    }
+  
+    // Write data from submissions.
+    $data = $exporter->add_row($handle, $row);
+  }
+  
+  // Add the closing bytes.
+  $exporter->eof($handle);
+  
+  // Close the file.
+  @fclose($handle);
+  
+  // Grab the largest sid
+  $sids = array_keys($submissions);
+  sort($sids, SORT_NUMERIC);
+  $largest_sid = array_pop($sids);
+  
+  // Generate the email only if we have submissions since the last report
+  if (count($sids) != 0) {
+    $now = time();
+    
+    // Report has been generated to be sent notify watchdog
+    watchdog('webform_scheduled_email_reports', 'Sending the report generated for !nid.', array('!nid' => $node->nid));
+    
+    // Send the email defined in 'webform_scheduled_email_reports_mail()'
+    $params = array(
+      'report_date' => $now,
+      'file_name' => $file_name,
+      'node' => $node,
+    );
+    drupal_mail('webform_scheduled_email_reports', 'webform_scheduled_report', $node->webform['scheduled_email_report']['recipient'], language_default(), $params);
+    
+    // Update our scheduling table setting the appropriate sid and last_report values
+    db_update('webform_scheduled_email_reports')
+      ->fields(array(
+        'sid' => $largest_sid,
+        'last_report' => $now,
+      ))
+      ->condition('nid', $node->nid)
+      ->execute();
+  }
+  
+  // Unlink the temporary CSV
+  @unlink($file_name);
+}
+
+/**
+ * Implements hook_mail().
+ */
+function webform_scheduled_email_reports_mail($key, &$message, $params) {
+  if ($key == 'webform_scheduled_report') {
+    $now = $params['report_timestamp'];
+    $report_date = date('m_j_Y', $now);
+
+    $attachments = array();
+    $attachments[] = array(
+      'filepath' => $params['file_name'],
+      'filename' => "enrollment_report_$report_date.csv",
+      'filemime' => 'application/csv',
+    );
+
+    $params['attachments'] = $attachments;
+
+    $message['to'] = $params['node']->webform['scheduled_email_report']['recipient'];
+    $message['subject'] = t("Enrollment Report for !report_date", array("!report_date" => date('m/j/Y', $now)));
+    $message['body'][] = t("See the attached CSV for !report_date", array("!report_date" => date('m/j/Y', $now)));
+  }
+}
+
+

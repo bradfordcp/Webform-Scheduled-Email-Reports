@@ -1,0 +1,63 @@
+<?php
+
+/**
+ * Implements hook_schema().
+ */
+function webform_scheduled_email_reports_schema() {
+  $schema['webform_scheduled_email_reports'] = array(
+    'description' => 'Stores all webforms which have automated reports.',
+    'fields' => array(
+      'nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => "Node representing the webform.",
+      ),
+      'sid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'default' => NULL,
+        'description' => "Highest submission id sent in a report for the given webform.",
+      ),
+      'enabled' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'size' => 'tiny',
+        'description' => "Whether the report is scheduled.",
+      ),
+      'report_interval' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => "Interval which the report should be sent.",
+      ),
+      'recipient' => array(
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'default' => '',
+        'length' => 255,
+        'description' => "Email the report should be sent to.",
+      ),
+      'last_report' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => "Timestamp of the last report email."
+      ),
+    ),
+    'primary key' => array('nid', 'sid'),
+    'unique keys' => array(
+      'nid' => array('nid'),
+    ),
+    'indexes' => array(
+      'sid' => array('sid'),
+    ),
+  );
+  return $schema;
+}
+
