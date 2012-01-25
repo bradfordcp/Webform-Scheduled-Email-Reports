@@ -199,11 +199,6 @@ function webform_scheduled_email_reports_defaults() {
  */
 function webform_scheduled_email_reports_cron() {
   // Send reports for each webform (on the specified interval)
-  // $result = db_query('SELECT * FROM {aggregator_feed} WHERE checked + refresh < :time AND refresh != :never', array(
-  //   ':time' => REQUEST_TIME,
-  //   ':never' => AGGREGATOR_CLEAR_NEVER,
-  // ));
-  
   $seconds_in_day = 60 * 60 * 24;
   $now = time();
   
@@ -379,7 +374,7 @@ function webform_scheduled_email_reports_send_report($node) {
     
     // Send the email defined in 'webform_scheduled_email_reports_mail()'
     $params = array(
-      'report_date' => $now,
+      'report_timestamp' => $now,
       'file_name' => $file_name,
       'node' => $node,
     );
@@ -402,7 +397,7 @@ function webform_scheduled_email_reports_send_report($node) {
 /**
  * Implements hook_mail().
  */
-function webform_scheduled_email_reports_mail($key, &$message, $params) {
+function webform_scheduled_email_reports_mail($key, &$message, &$params) {
   if ($key == 'webform_scheduled_report') {
     $now = $params['report_timestamp'];
     $report_date = date('m_j_Y', $now);
@@ -414,7 +409,8 @@ function webform_scheduled_email_reports_mail($key, &$message, $params) {
       'filemime' => 'application/csv',
     );
 
-    $params['attachments'] = $attachments;
+    $message['params']['attachments'] = $attachments;
+    $message['params']['plain'] = TRUE;
 
     $message['to'] = $params['node']->webform['scheduled_email_report']['recipient'];
     $message['subject'] = t("Enrollment Report for !report_date", array("!report_date" => date('m/j/Y', $now)));

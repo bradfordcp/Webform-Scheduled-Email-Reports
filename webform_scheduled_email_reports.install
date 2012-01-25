@@ -61,3 +61,9 @@ function webform_scheduled_email_reports_schema() {
   return $schema;
 }
 
+function webform_scheduled_email_reports_install() {
+  mailsystem_set(array(
+    'webform_scheduled_email_reports' => 'MimeMailSystem', // All messages sent by webform_scheduled_email_reports.
+  ));
+}
+
